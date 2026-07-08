@@ -11,7 +11,7 @@
 ---
 ## 🌐 Demo Video
 
-**[https://blostem-pulse-pr.vercel.app](https://blostem-pulse-pr.vercel.app)**
+**[Video Link](https://drive.google.com/file/d/1kMUcCs-fX4WvmOZJaAXn49M2jhSlbp2P/view?usp=drive_link)**
 
 ## 🌐 Live Demo
 
