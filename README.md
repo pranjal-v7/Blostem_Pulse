@@ -9,6 +9,10 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ---
+## 🌐 Demo Video
+
+**[https://blostem-pulse-pr.vercel.app](https://blostem-pulse-pr.vercel.app)**
+
 ## 🌐 Live Demo
 
 **[https://blostem-pulse-pr.vercel.app](https://blostem-pulse-pr.vercel.app)**
