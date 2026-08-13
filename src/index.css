@@ -34,28 +34,70 @@
   --sidebar-w: 220px;
   --content-max: 960px;
   --radius: 10px;
+
+  /* Enhanced contrast & depth */
+  --bg-elevated: #12121a;
+  --bg-subtle: #1a1a24;
+  --fg-primary: #f0f0f2;
+  --fg-secondary: #888888;
+  --accent-soft: rgba(0,212,164,0.08);
 }
 
 /* ═══════════════════════════════════════════════════════
    LIGHT THEME OVERRIDES
    ═══════════════════════════════════════════════════════ */
 [data-theme="light"] {
-  --bg0: #f4f4f5;
+  --bg0: #f8f9fa;
   --bg1: #ffffff;
-  --bg2: #f0f0f1;
-  --bg3: #e8e8ea;
+  --bg2: #f4f6f8;
+  --bg3: #e8eaec;
   --card: #ffffff;
-  --card-hover: #f9f9fa;
-  --border: rgba(0,0,0,0.08);
-  --border-hover: rgba(0,0,0,0.14);
+  --card-hover: #fafbfc;
+  --border: rgba(0,0,0,0.06);
+  --border-hover: rgba(0,0,0,0.10);
   --text1: #111111;
   --text2: #555555;
-  --text3: #999999;
+  --text3: #888888;
   /* keep brand colors identical */
   --teal-glow: rgba(0,212,164,0.12);
   --purple-glow: rgba(123,110,255,0.10);
   --coral-glow: rgba(255,80,64,0.10);
   --amber-glow: rgba(255,179,64,0.10);
+}
+
+/* Enhanced focused states */
+:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+}
+
+/* Improved input styles */
+.input-field:focus {
+  border-color: rgba(0,212,164,0.4);
+  box-shadow: 0 0 0 3px rgba(0,212,164,0.08);
+}
+
+/* Enhanced button styles */
+.btn-primary {
+  background: linear-gradient(180deg, #0fd89e, #0ab080);
+  border: none;
+  color: #000;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+.btn-primary:active {
+  transform: translateY(1px);
+}
+
+/* Enhanced hover states */
+.btn-primary:hover {
+  filter: brightness(1.1) drop-shadow(0 4px 12px rgba(0,212,164,0.3));
+}
+
+.btn-secondary:hover {
+  background: rgba(255,255,255,0.06);
+  border-color: var(--border-hover);
+  color: var(--text1);
 }
 
 [data-theme="light"] .glass {
@@ -753,3 +795,15 @@ textarea.input-field { height: auto; min-height: 44px; }
   margin-bottom: 8px; display: block;
   font-weight: 500;
 }
+
+/* enhanced interactive elements */
+a:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+button:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+
+/* improved hover effects on interactive */
+.btn-primary:hover { box-shadow: 0 4px 12px rgba(0,212,164,0.3); }
+.btn-secondary:hover { background: rgba(255,255,255,0.06); border-color: var(--border-hover); }
+
+/* enhanced card hover */
+.prospect-card { transition: transform 0.15s ease, box-shadow 0.2s ease; }
+.prospect-card:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.3); }

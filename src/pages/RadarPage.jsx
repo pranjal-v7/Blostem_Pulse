@@ -17,6 +17,7 @@ function timeAgo(date) {
 }
 
 function getHeat(score) {
+  if (score === null || score === undefined || isNaN(score)) return 'cold'
   if (score > 75) return 'hot'
   if (score >= 50) return 'warm'
   return 'cold'
