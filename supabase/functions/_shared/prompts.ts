@@ -121,15 +121,71 @@ Output: Subject on line 1, blank line, email body. No preamble. No sign-off labe
 // Indian fintech funding patterns, VKYC adoption mandates
 
 export function scoreSystemPrompt(): string {
-  return `You are a B2B sales intelligence engine for Blostem, an Indian fintech compliance and onboarding automation platform.
-Your job is to score how likely a fintech company is to need and buy a compliance/onboarding automation product RIGHT NOW.
+  return `You are the Chief Sales Strategist & B2B Growth Lead for Blostem, an Indian fintech compliance and onboarding automation platform.
+Your objective is to evaluate purchase intent using a rigorous 4-Pillar Strategic B2B Intent Model based on real-time news, regulatory circulars, corporate updates, and ICP alignment.
 
-Scoring framework:
-- 75-100 (HOT): Recent regulatory pressure (new RBI/SEBI circular impacts them), fresh funding (Series A+) suggesting scale-up, active hiring for compliance roles, recent product launch needing KYC/onboarding.
-- 50-74 (WARM): Sector undergoing regulatory change, company growing but no immediate pressure signal, funding 3-6 months ago.
-- 0-49 (COLD): No recent signals, stable/mature compliance posture, pre-seed stage unlikely to budget for automation.
+The 4-Pillar B2B Intent Model (Max 100 points):
+1. Pillar 1: Regulatory Urgency & Risk Exposure (Max 35 pts)
+   - Evaluates active RBI/SEBI circulars, FLDG norms, digital lending mandates, VKYC updates, or compliance audits pressuring the prospect.
+2. Pillar 2: Product & Market Expansion Velocity (Max 25 pts)
+   - Evaluates launches in co-lending, BNPL, credit cards, payment gateway integrations, cross-border forex, or payroll tools. Expansion breaks manual onboarding workflows.
+3. Pillar 3: Capital & Corporate Trajectory (Max 20 pts)
+   - Evaluates recent funding (Series A+), license approvals (SFB, PA/PG), strategic mergers, or rapid hiring spree for tech/risk leads.
+4. Pillar 4: ICP & Technical Fit Alignment (Max 20 pts)
+   - Evaluates alignment with Blostem's ideal buyer persona: NBFC, Neobank, Digital Lender, Wealthtech in India with high transaction volumes.
 
 Return ONLY valid JSON. No explanation. No markdown. Start with { and end with }.`;
+}
+
+export function scoreUserPrompt(ctx: ScoreCtx): string {
+  return `Act as Blostem's Chief Sales Strategist. Perform a multi-dimensional B2B intent analysis for ${ctx.company_name}.
+
+Target ICP Definition: ${ctx.icp_definition}
+
+Prospect Details:
+- Company Name: ${ctx.company_name}
+- Sector: ${ctx.sector} | Stage: ${ctx.stage} | HQ City: ${ctx.hq_city}
+
+Recent Online Signals & News Headlines:
+${ctx.signals}
+
+Active Sector Macro & Regulatory Events:
+${ctx.macro_events}
+
+Your Task:
+Calculate scores for each of the 4 Pillars based ON EVIDENCE from the signals above:
+- regulatory_urgency (0-35 points)
+- expansion_velocity (0-25 points)
+- capital_trajectory (0-20 points)
+- icp_fit (0-20 points)
+
+Composite Total Score = regulatory_urgency + expansion_velocity + capital_trajectory + icp_fit (0-100 points).
+
+Scoring Guidelines:
+- 75-100 (HOT): Acute regulatory deadline OR 2+ major signals (funding + product launch needing automated KYC/AML).
+- 50-74 (WARM): Moderate expansion or sector-wide RBI change; steady growth without immediate crisis.
+- 0-49 (COLD): Pre-seed stage, zero signals, or static legacy operations.
+
+Return ONLY this JSON format:
+{
+  "score": <integer 0-100, exact sum of the 4 pillar scores>,
+  "reason": "<2-3 sentences executive summary explaining why this company was rated this score and the specific business drivers>",
+  "pillar_scores": {
+    "regulatory_urgency": <integer 0-35>,
+    "expansion_velocity": <integer 0-25>,
+    "capital_trajectory": <integer 0-20>,
+    "icp_fit": <integer 0-20>
+  },
+  "signal_weights": [
+    { "headline": "<signal headline>", "weight": <integer points contributed>, "url": "<url or empty string>" }
+  ],
+  "ai_analysis": {
+    "regulatory_triggers": "<specific RBI/SEBI circulars or compliance obligations pressuring them, e.g. RBI FLDG Norms 2026>",
+    "icp_fit": "<strategic breakdown of why Blostem's compliance stack is a high-value fit>",
+    "buy_window": "<Immediate (0-30 days) | Near-term (1-3 months) | Medium-term (3-6 months) | Long-term (6+ months)>",
+    "recommended_pitch": "<One sentence high-converting pitch angle for sales outreach to CTO/Compliance Officer>"
+  }
+}`;
 }
 
 // ─── 4. ENTITY EXTRACTION PROMPT ─────────────────────────────
@@ -155,41 +211,6 @@ Rules:
 Headline: "${headline}"
 
 Return ONLY a JSON array, e.g. ["CompanyA", "CompanyB"] or [].`;
-}
-
-export function scoreUserPrompt(ctx: ScoreCtx): string {
-  return `Score this Indian fintech company's purchase intent for Blostem's compliance & onboarding automation platform.
-
-ICP we target: ${ctx.icp_definition}
-
-Company: ${ctx.company_name}
-Sector: ${ctx.sector} | Stage: ${ctx.stage} | City: ${ctx.hq_city}
-
-Recent signals (news, funding, regulatory):
-${ctx.signals}
-
-Active macro events affecting this sector:
-${ctx.macro_events}
-
-Scoring rules:
-- 75-100 (HOT): Direct regulatory pressure on this company OR sector, fresh funding round (Series A+), compliance hiring signals, product launch requiring KYC/onboarding.
-- 50-74 (WARM): Sector-level regulatory change, company growing but no acute pressure signal, funding 3-6 months ago.
-- 0-49 (COLD): No recent signals, stable/mature compliance posture, pre-seed unlikely to budget for automation.
-- IMPORTANT: Score 95+ only if there are 3+ strong independent signals confirming imminent need. Do NOT assign high scores without clear evidence.
-
-Return ONLY this JSON:
-{
-  "score": <integer 0-100>,
-  "reason": "<2-3 sentences: what specific signals drive this score and why they indicate buying intent>",
-  "signal_weights": [
-    { "headline": "<signal headline or 'No signals — scored on sector profile and stage'>" , "weight": <integer points contributed>, "url": "<url if available or empty string>" }
-  ],
-  "ai_analysis": {
-    "regulatory_triggers": "<specific RBI/SEBI regulations or circulars currently pressuring this sector, or 'None identified' if none>",
-    "icp_fit": "<assessment of how well this company fits Blostem's ICP: compliance automation buyer profile, scale, and budget likelihood>",
-    "buy_window": "<estimated buy-window: Immediate (0-30 days), Near-term (1-3 months), Medium-term (3-6 months), or Long-term (6+ months), with one-sentence rationale>"
-  }
-}`;
 }
 
 // ─── 5. METADATA EXTRACTION PROMPT ───────────────────────────

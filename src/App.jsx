@@ -10,6 +10,7 @@ import RadarPage from './pages/RadarPage'
 import CompanyDetailPage from './pages/CompanyDetailPage'
 import OutreachPage from './pages/OutreachPage'
 import SettingsPage from './pages/SettingsPage'
+import HistoryPage from './pages/HistoryPage'
 import ResetPasswordPage from './pages/ResetPasswordPage'
 import NotFoundPage from './pages/NotFoundPage'
 import { Loader2 } from 'lucide-react'
@@ -39,9 +40,9 @@ function AppRoutes() {
       if (!user) return;
 
       const SEED_COMPANIES = [
-        { name: 'Groww', sector: 'Wealthtech', stage: 'Late Stage', hq_city: 'Bengaluru', is_new_entrant: true, intent_score: null },
-        { name: 'Zerodha', sector: 'Wealthtech', stage: 'Bootstrapped', hq_city: 'Bengaluru', is_new_entrant: true, intent_score: null },
-        { name: 'Navi', sector: 'Lending', stage: 'Late Stage', hq_city: 'Bengaluru', is_new_entrant: true, intent_score: null },
+        { name: 'Groww', sector: 'Wealthtech', stage: 'Late Stage', hq_city: 'Bengaluru', is_new_entrant: true, intent_score: 89 },
+        { name: 'Zerodha', sector: 'Wealthtech', stage: 'Bootstrapped', hq_city: 'Bengaluru', is_new_entrant: true, intent_score: 84 },
+        { name: 'Navi', sector: 'Lending', stage: 'Late Stage', hq_city: 'Bengaluru', is_new_entrant: true, intent_score: 79 },
       ];
 
       const seedNames = SEED_COMPANIES.map(c => c.name);
@@ -83,6 +84,7 @@ function AppRoutes() {
       <Route path="/onboarding" element={<OnboardingPage />} />
       <Route path="/app" element={<ProtectedRoute><AppShell /></ProtectedRoute>}>
         <Route path="radar" element={<RadarPage />} />
+        <Route path="history" element={<HistoryPage />} />
         <Route path="company/:id" element={<CompanyDetailPage />} />
         <Route path="outreach" element={<OutreachPage />} />
         <Route path="settings" element={<SettingsPage />} />

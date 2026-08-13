@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/utils.ts";
+import { sanitizeText, validateExternalURL } from "../_shared/security.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -12,6 +13,28 @@ Deno.serve(async (req) => {
 
     const { company_id, company_name } = await req.json();
     const serpApiKey = Deno.env.get("SERPAPI_KEY");
+
+    // Capture the caller's auth header to forward to score-intent
+    const callerAuth = req.headers.get("Authorization");
+
+    // Look up user's ICP from their profile (if auth is a real user JWT)
+    let userIcp = "";
+    if (callerAuth) {
+      try {
+        const token = callerAuth.replace("Bearer ", "");
+        const { data: { user } } = await supabase.auth.getUser(token);
+        if (user) {
+          const { data: profile } = await supabase
+            .from("profiles")
+            .select("icp_definition")
+            .eq("id", user.id)
+            .single();
+          if (profile?.icp_definition) userIcp = profile.icp_definition;
+        }
+      } catch (_) {
+        // Auth lookup failed (service-role key or invalid) — fall through
+      }
+    }
 
     // Get old score
     const { data: oldCompany } = await supabase
@@ -34,9 +57,26 @@ Deno.serve(async (req) => {
       { name: "Entrackr", site: "entrackr.com" },
       { name: "TechCrunch", site: "techcrunch.com" },
       { name: "VCCircle", site: "vccircle.com" },
+      { name: "Business Standard", site: "business-standard.com" },
+      { name: "Financial Express", site: "financialexpress.com" },
+      { name: "BusinessLine", site: "thehindubusinessline.com" },
+      { name: "Medianama", site: "medianama.com" },
+      { name: "CNBC TV18", site: "cnbctv18.com" },
+      { name: "BusinessWorld", site: "businessworld.in" },
+      { name: "RBI Direct", site: "rbi.org.in" },
     ];
 
-    if (serpApiKey) {
+    // Check if fresh signals exist in DB to conserve SerpAPI 200 quota
+    const { data: existingSignals } = await supabase
+      .from("signals")
+      .select("id, fetched_at")
+      .eq("company_id", company_id)
+      .order("fetched_at", { ascending: false });
+
+    const hasFreshSignals = existingSignals && existingSignals.length >= 3 &&
+      (new Date().getTime() - new Date(existingSignals[0].fetched_at).getTime() < 24 * 60 * 60 * 1000);
+
+    if (serpApiKey && !hasFreshSignals) {
       // Build multi-source query
       const siteQuery = NEWS_SOURCES.map(s => `site:${s.site}`).join(" OR ");
       const query = encodeURIComponent(`${company_name} ${siteQuery}`);
@@ -44,31 +84,37 @@ Deno.serve(async (req) => {
       const serpRes = await fetch(serpUrl);
       const serpData = await serpRes.json();
 
-      const results = serpData.organic_results || [];
-
       for (const result of results.slice(0, 8)) {
+        const rawLink = result.link || "";
+        const sanitizedHeadline = sanitizeText(result.snippet || result.title || "", 300);
+
+        if (!sanitizedHeadline) continue;
+
+        // SSRF Check: Ensure URL is valid and whitelisted
+        const isSafeURL = validateExternalURL(rawLink);
+        const safeLink = isSafeURL ? rawLink : `https://inc42.com/buzz/${company_name.toLowerCase().replace(/\s/g, "-")}`;
+
         // Check for duplicate URL
         const { data: existing } = await supabase
           .from("signals")
           .select("id")
-          .eq("url", result.link)
+          .eq("url", safeLink)
           .limit(1);
 
         if (!existing || existing.length === 0) {
           // Detect source from URL
-          const url = result.link || "";
           let source = "deep-scan";
           for (const ns of NEWS_SOURCES) {
-            if (url.includes(ns.site)) { source = ns.name; break; }
+            if (safeLink.includes(ns.site)) { source = ns.name; break; }
           }
 
           const { data: inserted } = await supabase
             .from("signals")
             .insert({
               company_id,
-              headline: result.snippet || result.title,
+              headline: sanitizedHeadline,
               source,
-              url: result.link,
+              url: safeLink,
               score_contribution: Math.floor(Math.random() * 15) + 5,
             })
             .select()
@@ -106,15 +152,25 @@ Deno.serve(async (req) => {
     }
 
     // Call score-intent to rescore with new signals
+    const scoreHeaders: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    // Forward the real user's auth if available, otherwise use service role
+    if (callerAuth) {
+      scoreHeaders["Authorization"] = callerAuth;
+    } else {
+      scoreHeaders["Authorization"] = `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`;
+    }
+
     const scoreRes = await fetch(
       `${Deno.env.get("SUPABASE_URL")}/functions/v1/score-intent`,
       {
         method: "POST",
-        headers: {
-          "Authorization": `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ company_id }),
+        headers: scoreHeaders,
+        body: JSON.stringify({
+          company_id,
+          ...(userIcp ? { icp_definition: userIcp } : {}),
+        }),
       }
     );
     const scoreData = await scoreRes.json();

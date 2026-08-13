@@ -1,26 +1,30 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/utils.ts";
 import { callAI } from "../_shared/ai.ts";
+import { sanitizeText, sanitizeForAI } from "../_shared/security.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   try {
     const { company_name } = await req.json();
+    const safeCompanyName = sanitizeText(company_name, 100);
     const serpApiKey = Deno.env.get("SERPAPI_KEY");
     
     let snippets = "";
 
     // If SerpAPI is available, fetch some context
-    if (serpApiKey) {
-      const query = encodeURIComponent(`${company_name} India fintech official website linkedin contact email cto`);
+    if (serpApiKey && safeCompanyName) {
+      const query = encodeURIComponent(`${safeCompanyName} India fintech official website linkedin contact email cto`);
       const serpUrl = `https://serpapi.com/search.json?q=${query}&num=5&api_key=${serpApiKey}`;
       const serpRes = await fetch(serpUrl);
       const serpData = await serpRes.json();
       snippets = (serpData.organic_results || [])
-        .map((r: any) => `Title: ${r.title}\nLink: ${r.link}\nSnippet: ${r.snippet}`)
+        .map((r: any) => `Title: ${sanitizeText(r.title, 200)}\nLink: ${r.link}\nSnippet: ${sanitizeText(r.snippet, 300)}`)
         .join("\n\n");
     }
+
+    const safeSnippets = sanitizeForAI(snippets);
 
     // Use AI to extract the contact info from the web snippets (or hallucinate/know it if snippets are weak, but prioritize snippets)
     const systemPrompt = "You are a lead generation expert. Extract factual contact information for Indian fintech companies. Return ONLY valid JSON.";

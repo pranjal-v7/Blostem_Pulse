@@ -33,7 +33,7 @@ Deno.serve(async (req) => {
 
     // Fetch user ICP
     const authHeader = req.headers.get("Authorization")?.replace("Bearer ", "");
-    let icpDefinition = "Fintech compliance and onboarding automation platform";
+    let icpDefinition = "Series B+ fintechs in India needing compliance and onboarding automation";
     if (authHeader) {
       const { data: { user } } = await supabase.auth.getUser(authHeader);
       if (user) {

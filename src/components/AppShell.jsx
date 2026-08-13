@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { Radio, Mail, Settings, LogOut } from 'lucide-react'
+import { Radio, Mail, Settings, History, LogOut } from 'lucide-react'
 
 /* ─── Background Beams (Resend-style) ──────── */
 function BackgroundBeams() {
@@ -60,6 +60,7 @@ function BlostemLogo() {
 
 const NAV_ITEMS = [
   { to: '/app/radar', icon: Radio, label: 'Prospect Radar', badge: true },
+  { to: '/app/history', icon: History, label: 'History' },
   { to: '/app/outreach', icon: Mail, label: 'Outreach' },
   { to: '/app/settings', icon: Settings, label: 'Settings' },
 ]

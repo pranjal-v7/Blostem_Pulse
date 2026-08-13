@@ -24,7 +24,7 @@ export default function OnboardingPage() {
   const [geography, setGeography] = useState('')
   const [icpDefinition, setIcpDefinition] = useState('')
   const [saving, setSaving] = useState(false)
-  const { user } = useAuth()
+  const { user, session } = useAuth()
   const { addToast } = useToast()
   const navigate = useNavigate()
 
@@ -44,10 +44,13 @@ export default function OnboardingPage() {
       })
       if (error) throw error
       addToast('Profile saved! Scoring prospects...', 'success')
-      // Trigger async rescore_all
+      // Trigger async rescore_all — now with auth header so ICP is used
       fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/score-intent`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`,
+        },
         body: JSON.stringify({ rescore_all: true }),
       }).catch(() => {}) // fire-and-forget
       setTimeout(() => navigate('/app/radar'), 500)

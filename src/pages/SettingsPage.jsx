@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
 import { supabase } from '../lib/supabase'
 import { useToast } from '../components/Toast'
+import { getRealisticIntentScore } from '../utils/scoreCalculator'
 import { motion } from 'framer-motion'
 import { Settings, User, Database, Trash2, AlertTriangle, Loader2, Sparkles, RefreshCw, Camera, Shield, Bell, Globe, Moon, Sun, Info } from 'lucide-react'
 
@@ -68,8 +69,15 @@ export default function SettingsPage() {
         avatar_url: avatarUrl,
       })
       if (error) throw error
+      addToast('Profile saved!', 'success')
+    } catch (err) {
+      addToast(`Failed to save profile: ${err.message}`, 'error')
+      setSaving(false)
+      return // Don't attempt cron update if profile save failed
+    }
 
-      // Also update the backend cron schedule
+    // Update the backend cron schedule separately — non-fatal
+    try {
       let freqArg = 'manual'
       if (profile.scan_frequency === '2x_daily') freqArg = '2x'
       if (profile.scan_frequency === '4x_daily') freqArg = '4x'
@@ -79,11 +87,16 @@ export default function SettingsPage() {
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}` },
         body: JSON.stringify({ frequency: freqArg })
       })
-      if (!res.ok) throw new Error('Failed to update background scan schedule')
-
-      addToast('Settings & schedule saved', 'success')
-    } catch (err) {
-      addToast(err.message, 'error')
+      const data = await res.json()
+      if (data.warning) {
+        addToast(`Scan schedule note: ${data.warning}`, 'info')
+      } else if (!res.ok) {
+        addToast('Profile saved, but scan schedule update failed', 'warning')
+      } else {
+        addToast('Scan schedule updated', 'success')
+      }
+    } catch (cronErr) {
+      addToast('Profile saved, but scan schedule update failed', 'warning')
     }
     setSaving(false)
   }
@@ -114,7 +127,7 @@ export default function SettingsPage() {
   const loadDemoSignals = async () => {
     setLoadingDemo(true)
     try {
-      const { data: prospects } = await supabase.from('prospects').select('id, name')
+      const { data: prospects } = await supabase.from('prospects').select('id, name, intent_score')
       let inserted = 0
       for (const demo of DEMO_SIGNALS) {
         const prospect = prospects?.find(p => p.name === demo.name)
@@ -127,8 +140,10 @@ export default function SettingsPage() {
           })
           if (!error) inserted++
         }
+        const newScore = getRealisticIntentScore(prospect, 5)
+        await supabase.from('prospects').update({ intent_score: newScore }).eq('id', prospect.id)
       }
-      addToast(`Loaded ${inserted} demo signals`, 'success')
+      addToast(`Loaded ${inserted} demo signals & updated scores`, 'success')
     } catch { addToast('Failed to load demo signals', 'error') }
     setLoadingDemo(false)
   }

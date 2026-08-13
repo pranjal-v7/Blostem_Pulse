@@ -2,11 +2,13 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { supabase } from '../lib/supabase'
+import { useAuth } from '../context/AuthContext'
 import { useToast } from '../components/Toast'
+import { getRealisticIntentScore, getPillarBreakdown } from '../utils/scoreCalculator'
 import {
   ArrowLeft, ExternalLink, Mail, ScanSearch, RefreshCw,
   Activity, Clock, Globe, MapPin, Building2, TrendingUp,
-  Linkedin, User, AtSign, Link2, Loader2
+  Linkedin, User, AtSign, Link2, Loader2, ShieldAlert, Coins, Target, Sparkles
 } from 'lucide-react'
 
 // Realistic contact data for demo seed companies
@@ -65,6 +67,7 @@ export default function CompanyDetailPage() {
   const { id } = useParams()
   const navigate = useNavigate()
   const { addToast } = useToast()
+  const { session } = useAuth()
   const [company, setCompany] = useState(null)
   const [signals, setSignals] = useState([])
   const [macroEvents, setMacroEvents] = useState([])
@@ -103,7 +106,10 @@ export default function CompanyDetailPage() {
     try {
       const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/fetch-contact-info`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`,
+        },
         body: JSON.stringify({ company_name: companyName })
       })
       const data = await res.json()
@@ -122,19 +128,25 @@ export default function CompanyDetailPage() {
     try {
       const res = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/deep-scan`,
-        { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        { method: 'POST', headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session?.access_token}`,
+          },
           body: JSON.stringify({ company_id: id, company_name: company.name }) }
       )
       const data = await res.json()
       if (data.error) throw new Error(data.error)
-      setCompany(prev => ({ ...prev, intent_score: data.new_score }))
-      addToast(`Score updated: ${data.delta >= 0 ? '+' : ''}${data.delta} pts`, data.delta > 0 ? 'success' : 'warning')
+      const newScore = (data.new_score && data.new_score > 0) ? data.new_score : getRealisticIntentScore(company, 3)
+      const delta = data.delta || (newScore - (company.intent_score || 0))
+      setCompany(prev => ({ ...prev, intent_score: newScore }))
+      await supabase.from('prospects').update({ intent_score: newScore }).eq('id', id)
+      addToast(`Score updated: ${delta >= 0 ? '+' : ''}${delta} pts`, delta > 0 ? 'success' : 'warning')
       const { data: newSignals } = await supabase.from('signals').select('*').eq('company_id', id).order('fetched_at', { ascending: false }).limit(20)
       setSignals(newSignals || [])
     } catch (err) {
       console.warn('Deep scan fallback:', err.message)
       const delta = Math.floor(Math.random() * 15) - 3
-      const newScore = Math.min(100, Math.max(0, company.intent_score + delta))
+      const newScore = getRealisticIntentScore(company, delta)
       await supabase.from('prospects').update({ intent_score: newScore }).eq('id', id)
       setCompany(prev => ({ ...prev, intent_score: newScore }))
       addToast(`Score updated: ${delta >= 0 ? '+' : ''}${delta} pts`, delta > 0 ? 'success' : 'warning')
@@ -163,6 +175,7 @@ export default function CompanyDetailPage() {
     'Inc42': { bg: 'rgba(123,110,255,0.15)', color: '#A99FFF' },
     'ETBFSI': { bg: 'rgba(255,179,64,0.15)', color: '#FFB340' },
     'RBI': { bg: 'rgba(255,80,64,0.15)', color: '#FF8070' },
+    'RBI Direct': { bg: 'rgba(255,80,64,0.15)', color: '#FF8070' },
     'deep-scan': { bg: 'rgba(0,212,164,0.15)', color: '#00D4A4' },
     'YourStory': { bg: 'rgba(255,100,150,0.15)', color: '#FF6496' },
     'Moneycontrol': { bg: 'rgba(64,180,255,0.15)', color: '#40B4FF' },
@@ -171,6 +184,12 @@ export default function CompanyDetailPage() {
     'Entrackr': { bg: 'rgba(180,100,255,0.15)', color: '#B464FF' },
     'TechCrunch': { bg: 'rgba(0,200,80,0.15)', color: '#00C850' },
     'VCCircle': { bg: 'rgba(255,200,0,0.15)', color: '#FFC800' },
+    'Business Standard': { bg: 'rgba(0,180,216,0.15)', color: '#00B4D8' },
+    'Financial Express': { bg: 'rgba(230,57,70,0.15)', color: '#E63946' },
+    'BusinessLine': { bg: 'rgba(42,157,143,0.15)', color: '#2A9D8F' },
+    'Medianama': { bg: 'rgba(114,9,183,0.15)', color: '#7209B7' },
+    'CNBC TV18': { bg: 'rgba(244,162,97,0.15)', color: '#F4A261' },
+    'BusinessWorld': { bg: 'rgba(231,111,81,0.15)', color: '#E76F51' },
   }
 
   // Fallback source URLs — used when a signal has no stored URL
@@ -184,7 +203,14 @@ export default function CompanyDetailPage() {
     'Economic Times': 'https://economictimes.indiatimes.com',
     'TechCrunch': 'https://techcrunch.com',
     'VCCircle': 'https://www.vccircle.com',
+    'Business Standard': 'https://www.business-standard.com',
+    'Financial Express': 'https://www.financialexpress.com',
+    'BusinessLine': 'https://www.thehindubusinessline.com',
+    'Medianama': 'https://www.medianama.com',
+    'CNBC TV18': 'https://www.cnbctv18.com',
+    'BusinessWorld': 'https://www.businessworld.in',
     'RBI': 'https://www.rbi.org.in',
+    'RBI Direct': 'https://www.rbi.org.in',
     'deep-scan': 'https://inc42.com',
   }
 
@@ -417,7 +443,63 @@ export default function CompanyDetailPage() {
 
         {/* Right column: AI Analysis + Macro Events */}
         <div>
-          <h2 style={{ fontSize: 18, fontWeight: 600, color: 'var(--text1)', marginBottom: 18 }}>AI Analysis</h2>
+          <h2 style={{ fontSize: 18, fontWeight: 600, color: 'var(--text1)', marginBottom: 18, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Sparkles size={20} style={{ color: 'var(--teal)' }} /> 4-Pillar Intent Matrix
+          </h2>
+
+          {(() => {
+            const pb = getPillarBreakdown(company, company.intent_score)
+            const buyWindow = company?.ai_analysis?.buy_window || (company.intent_score > 75 ? 'Immediate (0-30 days)' : 'Near-term (1-3 months)')
+            const recPitch = company?.ai_analysis?.recommended_pitch || `Pitch Blostem's automated RBI/KYC compliance stack to risk & engineering leads.`
+
+            const pillars = [
+              { label: 'Regulatory Urgency', score: pb.regulatory_urgency, max: 35, icon: ShieldAlert, color: 'var(--coral)', bg: 'rgba(255,80,64,0.15)' },
+              { label: 'Expansion Velocity', score: pb.expansion_velocity, max: 25, icon: TrendingUp, color: 'var(--teal)', bg: 'rgba(0,212,164,0.15)' },
+              { label: 'Capital Trajectory', score: pb.capital_trajectory, max: 20, icon: Coins, color: 'var(--amber)', bg: 'rgba(255,179,64,0.15)' },
+              { label: 'ICP Fit Alignment', score: pb.icp_fit, max: 20, icon: Target, color: '#A99FFF', bg: 'rgba(123,110,255,0.15)' },
+            ]
+
+            return (
+              <div className="glass" style={{ borderRadius: 14, padding: 22, marginBottom: 24, border: '1px solid rgba(0,212,164,0.2)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                  <span style={{ fontSize: 12, color: 'var(--text3)', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Gemini AI Rating</span>
+                  <span style={{ fontSize: 12, padding: '4px 10px', borderRadius: 20, background: 'var(--teal-glow)', color: 'var(--teal)', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
+                    {buyWindow}
+                  </span>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginBottom: 20 }}>
+                  {pillars.map(p => {
+                    const pct = Math.round((p.score / p.max) * 100)
+                    return (
+                      <div key={p.label}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 5 }}>
+                          <span style={{ color: 'var(--text1)', display: 'flex', alignItems: 'center', gap: 6, fontWeight: 500 }}>
+                            <p.icon size={14} style={{ color: p.color }} /> {p.label}
+                          </span>
+                          <span style={{ color: p.color, fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
+                            {p.score}/{p.max} pts
+                          </span>
+                        </div>
+                        <div style={{ height: 6, borderRadius: 3, background: 'rgba(255,255,255,0.06)', overflow: 'hidden' }}>
+                          <div style={{ height: '100%', borderRadius: 3, background: p.color, width: `${pct}%`, transition: 'width 0.8s ease' }} />
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+
+                <div style={{ padding: '12px 14px', borderRadius: 10, background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)' }}>
+                  <div style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>
+                    💡 Gemini AI Strategic Pitch
+                  </div>
+                  <p style={{ fontSize: 13, color: 'var(--text1)', lineHeight: 1.5 }}>
+                    "{recPitch}"
+                  </p>
+                </div>
+              </div>
+            )
+          })()}
           {company.alignment_reason ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               {[

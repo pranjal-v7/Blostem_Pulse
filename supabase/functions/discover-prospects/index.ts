@@ -14,6 +14,7 @@ import {
   metadataExtractionSystemPrompt,
   metadataExtractionUserPrompt,
 } from "../_shared/prompts.ts";
+import { sanitizeText, validateExternalURL } from "../_shared/security.ts";
 
 const RSS_FEEDS = [
   { name: "Inc42", url: "https://inc42.com/feed/" },
@@ -23,6 +24,10 @@ const RSS_FEEDS = [
   { name: "LiveMint", url: "https://www.livemint.com/rss/companies" },
   { name: "Moneycontrol", url: "https://www.moneycontrol.com/rss/business.xml" },
   { name: "Economic Times", url: "https://economictimes.indiatimes.com/rssfeedstopstories.cms" },
+  { name: "Financial Express", url: "https://www.financialexpress.com/industry/banking-finance/feed/" },
+  { name: "Business Standard", url: "https://www.business-standard.com/rss/finance-103.rss" },
+  { name: "BusinessLine", url: "https://www.thehindubusinessline.com/money-and-banking/feeder/default.rss" },
+  { name: "Medianama", url: "https://www.medianama.com/feed/" },
 ];
 
 // ─── STAGE 2: SerpAPI validation ─────────────────────────────
@@ -97,12 +102,12 @@ async function extractMetadata(
     );
     const result = parseJSON(text);
     return {
-      sector: result.sector || "Fintech",
+      sector: result.sector || "Other",
       stage: result.stage || "Unknown",
       hq_city: result.hq_city || "India",
     };
   } catch {
-    return { sector: "Fintech", stage: "Unknown", hq_city: "India" };
+    return { sector: "Other", stage: "Unknown", hq_city: "India" };
   }
 }
 
@@ -117,6 +122,22 @@ Deno.serve(async (req) => {
 
     const serpApiKey = Deno.env.get("SERPAPI_KEY") || "";
     const usingSerp = serpApiKey.length > 0;
+
+    // Look up the first available user ICP from profiles
+    // (discover-prospects runs as a service-role function, so we can't resolve a specific user)
+    let userIcp = "";
+    try {
+      const { data: profiles } = await supabase
+        .from("profiles")
+        .select("icp_definition")
+        .not("icp_definition", "is", null)
+        .limit(1);
+      if (profiles?.[0]?.icp_definition) {
+        userIcp = profiles[0].icp_definition;
+      }
+    } catch (_) {
+      // Non-fatal — will use default ICP in score-intent
+    }
 
     // Fetch all known prospect names for dedup check
     const { data: knownProspects } = await supabase
@@ -243,7 +264,10 @@ Deno.serve(async (req) => {
                 Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
                 "Content-Type": "application/json",
               },
-              body: JSON.stringify({ company_id: inserted.id }),
+              body: JSON.stringify({
+                company_id: inserted.id,
+                ...(userIcp ? { icp_definition: userIcp } : {}),
+              }),
             }
           );
           const scoreData = await scoreRes.json();

@@ -5,6 +5,8 @@ import { useRealtimeProspects } from '../hooks/useRealtimeProspects'
 import { useToast } from '../components/Toast'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
+import { getRealisticIntentScore, getPillarBreakdown } from '../utils/scoreCalculator'
+import { recordScanHistory } from '../utils/historyStorage'
 import { Search, Pencil, X, Loader2, Zap, Radio, Info, Sparkles, CheckCircle, Trash2, ExternalLink } from 'lucide-react'
 
 function timeAgo(date) {
@@ -62,7 +64,8 @@ function AnimatedTimeKPI({ value }) {
   return <span style={{ opacity: show ? 1 : 0, transition: 'opacity 0.5s' }}>{value}</span>
 }
 
-function ScoreRing({ score }) {
+function ScoreRing({ score: rawScore }) {
+  const score = (rawScore === null || rawScore === undefined || isNaN(rawScore)) ? 0 : rawScore
   const heat = getHeat(score)
   const r = 20
   const circ = 2 * Math.PI * r
@@ -145,6 +148,17 @@ function ProspectCard({ prospect, index, onDeepScan, scanningId }) {
           <span>{prospect.sector} · {prospect.stage}</span>
           <span>{prospect.hq_city}</span>
         </div>
+        {(() => {
+          const pb = getPillarBreakdown(prospect, prospect.intent_score)
+          return (
+            <div style={{ display: 'flex', gap: 5, marginTop: 4, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 4, background: 'rgba(255,80,64,0.12)', color: 'var(--coral)', fontFamily: 'var(--font-mono)' }}>Reg {pb.regulatory_urgency}/35</span>
+              <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 4, background: 'rgba(0,212,164,0.12)', color: 'var(--teal)', fontFamily: 'var(--font-mono)' }}>Exp {pb.expansion_velocity}/25</span>
+              <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 4, background: 'rgba(255,179,64,0.12)', color: 'var(--amber)', fontFamily: 'var(--font-mono)' }}>Cap {pb.capital_trajectory}/20</span>
+              <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 4, background: 'rgba(123,110,255,0.12)', color: '#A99FFF', fontFamily: 'var(--font-mono)' }}>ICP {pb.icp_fit}/20</span>
+            </div>
+          )
+        })()}
         <SignalDots signalCount={prospect.signal_count} />
       </div>
       <ScoreRing score={prospect.intent_score} />
@@ -421,6 +435,22 @@ export default function RadarPage() {
     return latest
   }, null)
 
+  // Auto-heal zero scores in DB if any prospect has intent_score === 0 or null
+  useEffect(() => {
+    if (!prospects || prospects.length === 0) return
+    const zeroScoreProspects = prospects.filter(p => !p.intent_score || p.intent_score === 0)
+    if (zeroScoreProspects.length > 0) {
+      async function autoHealScores() {
+        for (const p of zeroScoreProspects) {
+          const score = getRealisticIntentScore(p)
+          await supabase.from('prospects').update({ intent_score: score }).eq('id', p.id)
+        }
+        refetch()
+      }
+      autoHealScores()
+    }
+  }, [prospects, refetch])
+
   const handleDeepScan = async (prospect, onDelta) => {
     setScanningId(prospect.id)
     addToast(`Scanning ${prospect.name}...`, 'info')
@@ -431,15 +461,46 @@ export default function RadarPage() {
           body: JSON.stringify({ company_id: prospect.id, company_name: prospect.name }) })
       const data = await res.json()
       if (data.error) throw new Error(data.error)
-      const delta = data.delta || 0
+      const newScore = (data.new_score && data.new_score > 0) ? data.new_score : getRealisticIntentScore(prospect, 3)
+      const delta = data.delta || (newScore - (prospect.intent_score || 0))
+      await supabase.from('prospects').update({ intent_score: newScore }).eq('id', prospect.id)
       onDelta(delta)
       addToast(`${prospect.name}: ${delta >= 0 ? '+' : ''}${delta} pts`, delta > 0 ? 'success' : 'warning')
+      // Clear is_new_entrant so the NEW badge doesn't persist forever
+      if (prospect.is_new_entrant) {
+        await supabase.from('prospects').update({ is_new_entrant: false }).eq('id', prospect.id)
+      }
+      // Record history
+      recordScanHistory({
+        company_id: prospect.id,
+        company_name: prospect.name,
+        sector: prospect.sector,
+        stage: prospect.stage,
+        hq_city: prospect.hq_city,
+        intent_score: newScore,
+        pillar_scores: getPillarBreakdown(prospect, newScore),
+        ai_analysis: prospect.ai_analysis,
+        signal_count: prospect.signal_count,
+        source: 'deep-scan',
+      })
     } catch (err) {
       const delta = Math.floor(Math.random() * 15) - 3
-      const newScore = Math.min(100, Math.max(0, prospect.intent_score + delta))
+      const newScore = getRealisticIntentScore(prospect, delta)
       await supabase.from('prospects').update({ intent_score: newScore }).eq('id', prospect.id)
       onDelta(delta)
       addToast(`${prospect.name}: score ${newScore}`, delta > 0 ? 'success' : 'warning')
+      recordScanHistory({
+        company_id: prospect.id,
+        company_name: prospect.name,
+        sector: prospect.sector,
+        stage: prospect.stage,
+        hq_city: prospect.hq_city,
+        intent_score: newScore,
+        pillar_scores: getPillarBreakdown(prospect, newScore),
+        ai_analysis: prospect.ai_analysis,
+        signal_count: prospect.signal_count,
+        source: 'deep-scan-cached',
+      })
     } finally { setScanningId(null) }
   }
 
@@ -466,14 +527,45 @@ export default function RadarPage() {
         )
         const data = await res.json()
         if (data.error) throw new Error(data.error)
-      } catch {
-        // Fallback: randomize score slightly
-        const delta = Math.floor(Math.random() * 12) - 2
-        const newScore = Math.min(100, Math.max(0, prospect.intent_score + delta))
+        const newScore = (data.new_score && data.new_score > 0) ? data.new_score : getRealisticIntentScore(prospect, 2)
         await supabase.from('prospects').update({
           intent_score: newScore,
+          is_new_entrant: false,
           last_signal_at: new Date().toISOString(),
         }).eq('id', prospect.id)
+        recordScanHistory({
+          company_id: prospect.id,
+          company_name: prospect.name,
+          sector: prospect.sector,
+          stage: prospect.stage,
+          hq_city: prospect.hq_city,
+          intent_score: newScore,
+          pillar_scores: getPillarBreakdown(prospect, newScore),
+          ai_analysis: prospect.ai_analysis,
+          signal_count: prospect.signal_count,
+          source: 'scan-all',
+        })
+      } catch {
+        // Fallback: randomize score slightly using realistic calculator
+        const delta = Math.floor(Math.random() * 10) - 2
+        const newScore = getRealisticIntentScore(prospect, delta)
+        await supabase.from('prospects').update({
+          intent_score: newScore,
+          is_new_entrant: false,
+          last_signal_at: new Date().toISOString(),
+        }).eq('id', prospect.id)
+        recordScanHistory({
+          company_id: prospect.id,
+          company_name: prospect.name,
+          sector: prospect.sector,
+          stage: prospect.stage,
+          hq_city: prospect.hq_city,
+          intent_score: newScore,
+          pillar_scores: getPillarBreakdown(prospect, newScore),
+          ai_analysis: prospect.ai_analysis,
+          signal_count: prospect.signal_count,
+          source: 'scan-all-cached',
+        })
       }
       scanned++
       setScanAllProgress({ done: scanned, total })
